@@ -1,5 +1,5 @@
 // 静态托管链接
-const CLOUD_BASE_URL = "https://fengruol.github.io/ComfyUI-Prompt-CloudDB";
+const CLOUD_BASE_URL = "https://huggingface.co/datasets/FRuoL/ComfyUI-Prompt-CloudDB/resolve/main";
 
 export const PromptAPI = {
     async getDB() {

@@ -460,6 +460,147 @@ class PromptDatasetImporterNode:
         return (result_msg,)
 
 # ==========================================
+# 节点 8：新增的标准图文数据集（A.jpg + A.txt）一键导入节点
+# ==========================================
+class PromptLocalFolderImporterNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "文件夹绝对路径": ("STRING", {"default": "D:\\my_sd_dataset"}),
+                "目标一级分类": (get_target_models(), ),
+                "新建三级分类名称": ("STRING", {"default": "图文集导入"}),
+                "最大图片尺寸": ("INT", {"default": 512, "min": 128, "max": 2048, "step": 64}),
+                "压缩率": ("FLOAT", {"default": 0.85, "min": 0.1, "max": 1.0, "step": 0.01}),
+            }
+        }
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("执行结果",)
+    FUNCTION = "import_folder"
+    OUTPUT_NODE = True
+    CATEGORY = "Prompt Manager"
+
+    def import_folder(self, 文件夹绝对路径, 目标一级分类, 新建三级分类名称, 最大图片尺寸, 压缩率):
+        文件夹绝对路径 = 文件夹绝对路径.strip('\"').strip('\'')
+
+        if not os.path.exists(文件夹绝对路径) or not os.path.isdir(文件夹绝对路径):
+            return (f"【失败】找不到文件夹: {文件夹绝对路径}，请检查路径是否正确。",)
+
+        db_data = load_full_db()
+        models = db_data.get("models", {}).get("main_models", {})
+        
+        m_id = None
+        for k, v in models.items():
+            if f"[{v.get('name', k)}]" == 目标一级分类:
+                m_id = k
+                break
+        
+        if not m_id:
+            return ("【失败】未找到目标一级分类，请确保已在界面左侧新建至少一个分类。",)
+
+        # 1. 自动注册新的三级分类
+        md_id = f"import_dir_{int(time.time())}"
+        if "modes" not in models[m_id]: models[m_id]["modes"] = {}
+        models[m_id]["modes"][md_id] = {"name": 新建三级分类名称, "group": "custom"}
+        
+        # 2. 准备上下文环境并创建物理文件夹
+        ctx = f"{m_id}_{md_id}"
+        db_data["contexts"][ctx] = {"items": [], "metadata": {}, "groups": [], "combos": []}
+        ctx_data = db_data["contexts"][ctx]
+        
+        target_dir = os.path.join(DATA_DIR, ctx)
+        os.makedirs(target_dir, exist_ok=True)
+
+        successful_imgs_count = 0
+        valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
+        
+        print(f"\n[Prompt Manager] 开始扫描并导入图文文件夹: {文件夹绝对路径}")
+
+        for filename in os.listdir(文件夹绝对路径):
+            ext = os.path.splitext(filename)[1].lower()
+            base_name = os.path.splitext(filename)[0]
+
+            if ext in valid_exts:
+                img_path = os.path.join(文件夹绝对路径, filename)
+                
+                # 【核心修复】：多重命名规则匹配，通杀各种打标器生成的文件名
+                potential_txt_names = [
+                    f"{filename}.desc.txt",  # 匹配 A.png.desc.txt (你当前的情况)
+                    f"{filename}.txt",       # 匹配 A.png.txt (常见于 WD14 Tagger)
+                    f"{base_name}.txt",      # 匹配 A.txt (最标准的替换后缀格式)
+                    f"{base_name}.desc.txt", # 匹配 A.desc.txt
+                    f"{base_name}.caption",  # 匹配 A.caption (常见于 Kohya 训练脚本)
+                    f"{filename}.caption",   # 匹配 A.png.caption
+                ]
+                
+                # 遍历寻找第一个真正存在的文本文件
+                txt_path = None
+                for p_name in potential_txt_names:
+                    p_path = os.path.join(文件夹绝对路径, p_name)
+                    if os.path.exists(p_path):
+                        txt_path = p_path
+                        break
+                
+                # 如果没找到任何txt文件，才退化使用图片名
+                prompt_text = base_name 
+                if txt_path:
+                    content = ""
+                    # 保留强大的编码兼容机制
+                    for encoding in ['utf-8', 'utf-8-sig', 'gbk', 'mbcs']:
+                        try:
+                            with open(txt_path, 'r', encoding=encoding) as f:
+                                raw_lines = f.readlines()
+                                content = " ".join([line.strip() for line in raw_lines if line.strip()])
+                            if content:
+                                break 
+                        except UnicodeDecodeError:
+                            continue
+                        except Exception as e:
+                            logger.warning(f"读取TXT发生意外错误 {txt_path}: {e}")
+                            break
+                            
+                    if content:
+                        prompt_text = content
+                
+                safe_name = normalize_prompt_name(prompt_text)
+                if not safe_name: continue
+
+                try:
+                    with Image.open(img_path) as img:
+                        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+                        w, h = img.size
+                        if w > 最大图片尺寸 or h > 最大图片尺寸:
+                            resample_filter = getattr(Image.Resampling, 'LANCZOS', getattr(Image, 'LANCZOS', 1)) if hasattr(Image, 'Resampling') else getattr(Image, 'LANCZOS', 1)
+                            img.thumbnail((最大图片尺寸, 最大图片尺寸), resample_filter)
+                        
+                        file_safe_name = "".join([c for c in safe_name if c.isalnum()]).rstrip()[:15]
+                        if not file_safe_name: file_safe_name = "img"
+                        
+                        img_name = f"dir_{file_safe_name}_{torch.randint(0, 10000, (1,)).item()}.jpg"
+                        save_path = os.path.join(target_dir, img_name)
+                        
+                        img.save(save_path, format="JPEG", quality=int(压缩率 * 100))
+                        img_url = f"/prompt_data/{ctx}/{img_name}"
+                        
+                        if safe_name not in ctx_data["items"]:
+                            ctx_data["items"].append(safe_name)
+                            ctx_data["metadata"][safe_name] = {"tags": ["本地目录导入"]}
+                        
+                        img_key = f"{ctx}_{safe_name}"
+                        if img_key not in db_data["images"]: db_data["images"][img_key] = []
+                        db_data["images"][img_key].append(img_url)
+                        
+                        successful_imgs_count += 1
+                except Exception as e:
+                    logger.warning(f"图片处理跳过 {img_path}: {e}")
+
+        save_full_db(db_data)
+        
+        result_msg = f"【成功】已从文件夹扫描并处理了 {successful_imgs_count} 对图文数据！\n存入分类：{新建三级分类名称}"
+        print(f"[Prompt Manager] {result_msg}")
+        return (result_msg,)
+
+# ==========================================
 # 路由映射
 # ==========================================
 @server.PromptServer.instance.routes.get("/prompt_data/{path:.*}")
@@ -613,7 +754,8 @@ NODE_CLASS_MAPPINGS = {
     "PromptComboLoaderNode": PromptComboLoaderNode,
     "PromptGroupRandomizerNode": PromptGroupRandomizerNode,
     "PromptBatchReaderNode": PromptBatchReaderNode,
-    "PromptDatasetImporterNode": PromptDatasetImporterNode # <--- 注册新节点
+    "PromptDatasetImporterNode": PromptDatasetImporterNode,
+    "PromptLocalFolderImporterNode": PromptLocalFolderImporterNode # <--- 新增这行
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "PromptBrowserNode": "Prompt浏览器", 
@@ -622,5 +764,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PromptComboLoaderNode": "Prompt组合预设加载器",
     "PromptGroupRandomizerNode": "Prompt收藏夹盲盒",
     "PromptBatchReaderNode": "Prompt批量读取",
-    "PromptDatasetImporterNode": "Prompt本地数据集导入" # <--- 注册中文名
+    "PromptDatasetImporterNode": "Prompt本地数据集导入",
+    "PromptLocalFolderImporterNode": "Prompt本地文件夹导入(打标格式)" # <--- 新增这行，给用户看的中文名
 }
