@@ -1053,12 +1053,14 @@ window.PM_Global.ui.forceUpdateCloud = async function() {
     UI.updateProgress("正在连接云端...", "穿透缓存获取最新数据，请耐心等待");
     
     try {
-        const CLOUD_JSON_URL = "https://hf-mirror.com/datasets/FRuoL/ComfyUI-Prompt-CloudDB/raw/main";
-        const CLOUD_IMG_BASE = "https://hf-mirror.com/datasets/FRuoL/ComfyUI-Prompt-CloudDB/resolve/main/data/";
+        const GH_REPO = "FengRuoL/ComfyUI-Prompt-CloudDB";
+        const GH_BRANCH = "main";
+        const CLOUD_JSON_URL = `https://cdn.jsdelivr.net/gh/${GH_REPO}@${GH_BRANCH}/`;
+        const CLOUD_IMG_BASE = `https://cdn.jsdelivr.net/gh/${GH_REPO}@${GH_BRANCH}/data/`;
         const t = Date.now(); 
         
         // 1. 获取基础架构 system.json
-        const sysRes = await fetch(`${CLOUD_JSON_URL}/data/system.json?t=${t}`);
+        const sysRes = await fetch(`${CLOUD_JSON_URL}data/system.json?t=${t}`);
         if (!sysRes.ok) throw new Error("无法连接到云端 system.json");
         const sysText = await sysRes.text();
         
@@ -1083,7 +1085,7 @@ window.PM_Global.ui.forceUpdateCloud = async function() {
         // 3. 并发下载分包数据
         const fetchCtx = async (ctxId) => {
             try {
-                const res = await fetch(`${CLOUD_JSON_URL}/data/contexts_db/${ctxId}.json?t=${t}`);
+                const res = await fetch(`${CLOUD_JSON_URL}data/contexts_db/${ctxId}.json?t=${t}`);
                 if (res.ok) {
                     const text = await res.text();
                     return { id: ctxId, data: JSON.parse(text.replace(/\/prompt_data\//g, CLOUD_IMG_BASE)) };

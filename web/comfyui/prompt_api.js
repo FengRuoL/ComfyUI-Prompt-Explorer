@@ -7,9 +7,13 @@ if (!document.head.querySelector('meta[name="referrer"]')) {
     document.head.appendChild(meta);
 }
 
-// 静态托管链接 (区分 JSON读取 和 图片加载)
-const CLOUD_JSON_URL = "https://hf-mirror.com/datasets/FRuoL/ComfyUI-Prompt-CloudDB/raw/main";
-const CLOUD_IMG_BASE = "https://hf-mirror.com/datasets/FRuoL/ComfyUI-Prompt-CloudDB/resolve/main/data/";
+// 假设你的 GitHub 用户名是 FengRuoL (请确认大小写)，分支是 main
+const GH_REPO = "FengRuoL/ComfyUI-Prompt-CloudDB";
+const GH_BRANCH = "main";
+
+// jsDelivr 统一加速通道，JSON 和图片都可以走这里！
+const CLOUD_JSON_URL = `https://cdn.jsdelivr.net/gh/${GH_REPO}@${GH_BRANCH}/`;
+const CLOUD_IMG_BASE = `https://cdn.jsdelivr.net/gh/${GH_REPO}@${GH_BRANCH}/data/`;
 
 export const PromptAPI = {
     async getDB() {
@@ -28,7 +32,7 @@ export const PromptAPI = {
                 const timeoutId = setTimeout(() => controller.abort(), 8000); 
                 
                 // 2.1 获取基础架构 system.json (用 raw)
-                const sysRes = await fetch(`${CLOUD_JSON_URL}/data/system.json`, { signal: controller.signal });
+                const sysRes = await fetch(`${CLOUD_JSON_URL}data/system.json`, { signal: controller.signal });
                 if (!sysRes.ok) throw new Error(`system.json HTTP error! status: ${sysRes.status}`);
                 const sysText = await sysRes.text();
                 
@@ -52,7 +56,7 @@ export const PromptAPI = {
                 // 2.3 并发下载所有模式的分包数据
                 const fetchCtx = async (ctxId) => {
                     try {
-                        const res = await fetch(`${CLOUD_JSON_URL}/data/contexts_db/${ctxId}.json`, { signal: controller.signal });
+                        const res = await fetch(`${CLOUD_JSON_URL}data/contexts_db/${ctxId}.json`, { signal: controller.signal });
                         if (res.ok) {
                             const text = await res.text();
                             // 【核心提速】：同样直连图片
