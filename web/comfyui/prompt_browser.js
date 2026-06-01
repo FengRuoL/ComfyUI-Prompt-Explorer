@@ -662,6 +662,21 @@ function openNativeBrowser() {
     }
     
     renderModelTabs();
+
+    // 【新增】：如果切回的是离开时的那个分类，则恢复离开时的滚动位置和渲染层数
+    if (STATE.lastSavedModelId === STATE.currentModelId && STATE.lastSavedModeId === STATE.currentModeId) {
+        setTimeout(() => {
+            const main = document.getElementById("pm-main");
+            if (main && STATE.lastSavedRenderIndex) {
+                // 瞬间补齐之前加载的所有 DOM 节点
+                renderNextChunk(STATE.lastSavedRenderIndex);
+                // 恢复滚动条
+                requestAnimationFrame(() => {
+                    main.scrollTop = STATE.lastSavedScrollTop || 0;
+                });
+            }
+        }, 50); // 留一点时间让 renderModelTabs 跑完
+    }
 }
 
 // ==========================================
@@ -1277,7 +1292,18 @@ window.executeBatchDelete = async function() {
     } catch (e) { alert("删除异常！"); } finally { UI.hideProgress(); renderGrid(); }
 };
 
-function closeNativeBrowser() { document.getElementById("pm-native-modal").style.display = "none"; UTILS.syncImportNodeWidgets(); }
+function closeNativeBrowser() { 
+    // 退出前，记录当前的滚动位置、当前分类，以及已经渲染到了第几批
+    const main = document.getElementById("pm-main");
+    if (main) {
+        STATE.lastSavedScrollTop = main.scrollTop || 0;
+        STATE.lastSavedRenderIndex = STATE._renderIndex || 60;
+        STATE.lastSavedModelId = STATE.currentModelId;
+        STATE.lastSavedModeId = STATE.currentModeId;
+    }
+    document.getElementById("pm-native-modal").style.display = "none"; 
+    UTILS.syncImportNodeWidgets(); 
+}
 
 function setupShortcuts() {
     document.addEventListener("keydown", (e) => {
