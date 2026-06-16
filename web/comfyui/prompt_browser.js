@@ -2211,30 +2211,77 @@ app.registerExtension({
                     openNativeBrowser();
                 });
 
+                // 新增：抽取范围下拉框
+                let scopeWidget = this.widgets.find(w => w.name === "随机抽取范围");
+                if (!scopeWidget) {
+                    scopeWidget = this.addWidget("combo", "随机抽取范围", "当前三级分类", () => {}, { values: ["当前三级分类", "当前二级分类", "当前一级分类"] });
+                }
+
                 const btnRandom = this.addWidget("button", "随机抽取", "random", async () => {
                     if (Object.keys(STATE.localDB.contexts || {}).length === 0) STATE.localDB = await UTILS.getAndMigrateDB();
                     if (!STATE.currentModelId) STATE.currentModelId = Object.keys(STATE.localDB.models?.main_models || {})[0];
-                    if (!STATE.currentModeId && STATE.currentModelId) STATE.currentModeId = Object.keys(STATE.localDB.models.main_models[STATE.currentModelId].modes || {})[0];
-                    
-                    const ctx = `${STATE.currentModelId}_${STATE.currentModeId}`;
-                    const dataItems = STATE.localDB.contexts[ctx]?.items || [];
-                    if (dataItems.length === 0) return;
-                    
+                    if (!STATE.currentModeId && STATE.currentModelId) {
+                        STATE.currentModeId = Object.keys(STATE.localDB.models.main_models[STATE.currentModelId].modes || {})[0];
+                    }
+                    if (!STATE.currentModelId || !STATE.currentModeId) return;
+
+                    // 1. 获取用户的范围选项
+                    const scope = scopeWidget ? scopeWidget.value : "当前三级分类";
+
+                    // 2. 收集所有符合条件的上下文 (ctx)
+                    let targetCtxs = [];
+                    const modelData = STATE.localDB.models.main_models[STATE.currentModelId];
+
+                    if (scope === "当前一级分类") {
+                        // 目标：当前一级分类下的所有三级分类
+                        Object.keys(modelData.modes).forEach(mId => targetCtxs.push(`${STATE.currentModelId}_${mId}`));
+                    } else if (scope === "当前二级分类") {
+                        // 目标：通过当前三级分类的 group 属性反查同属一个二级分类的兄弟节点
+                        const currentCatId = modelData.modes[STATE.currentModeId]?.group || 'custom';
+                        Object.entries(modelData.modes).forEach(([mId, m]) => {
+                            if (m.group === currentCatId || (!m.group && currentCatId === 'custom')) {
+                                targetCtxs.push(`${STATE.currentModelId}_${mId}`);
+                            }
+                        });
+                    } else {
+                        // 目标：仅当前三级分类
+                        targetCtxs.push(`${STATE.currentModelId}_${STATE.currentModeId}`);
+                    }
+
+                    // 3. 【绝对随机核心】：把所有涉及的分类数据倒入一个 Set 总池子进行去重，扁平化处理
+                    let pool = new Set();
+                    targetCtxs.forEach(ctx => {
+                        const ctxData = STATE.localDB.contexts[ctx];
+                        if (ctxData && ctxData.items) {
+                            ctxData.items.forEach(item => pool.add(item));
+                        }
+                    });
+
+                    const dataItems = Array.from(pool);
+                    if (dataItems.length === 0) return alert("当前选择范围内没有任何提示词卡片！");
+
+                    // 4. 抽取逻辑
                     const countWidget = this.widgets.find(w => w.name === "抽取数量");
                     const desiredCount = countWidget ? countWidget.value : 3;
+
+                    const count = Math.min(dataItems.length, desiredCount);
                     
-const count = Math.min(dataItems.length, desiredCount);
+                    // 使用原生 Fisher-Yates 算法对四万数据的总池子进行完全公平洗牌
                     const selected = UTILS.pmShuffle(dataItems).slice(0, count);
-                    
+
                     const newParsed = selected.map(tag => ({ original: tag, tag: tag, weight: 1.0, enabled: true }));
-                    promptWidget.value = UTILS.buildPromptText(newParsed); app.graph.setDirtyCanvas(true); renderList();
+                    promptWidget.value = UTILS.buildPromptText(newParsed); 
+                    app.graph.setDirtyCanvas(true); 
+                    renderList();
                 });
 
                 const autoRandomWidget = this.widgets.find(w => w.name === "自动随机抽取");
                 const countWidget = this.widgets.find(w => w.name === "抽取数量");
 
+                // 重新排布节点的 UI 顺序
                 const desiredOrder = [
                     btnOpen,
+                    scopeWidget,       // 插入下拉框
                     btnRandom,
                     autoRandomWidget,
                     countWidget,
