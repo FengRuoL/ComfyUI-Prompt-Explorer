@@ -2089,7 +2089,7 @@ async function cleanupContextImages(ctx) {
     for (const f of foldersToWipe) await PromptAPI.deleteFolder(f);
 }
 
-// === 5. 节点注册: PromptBrowserNode ===
+// === 5. 节点注册: PromptBrowserNode (全新 HTML 统一样式) ===
 app.registerExtension({
     name: "PromptManager.BrowserNode",
     setup() {
@@ -2103,7 +2103,6 @@ app.registerExtension({
                 }
 
                 if (hasAutoRandom) {
-                    // 修复：仅抽取一次盲盒，不再强行拦截拆分批次队列
                     const targetNodes = app.graph._nodes.filter(n => n.type === "PromptBrowserNode" || n.type === "PromptGroupRandomizerNode");
                     for (const node of targetNodes) {
                         const autoWidget = node.widgets?.find(w => w.name === "自动随机抽取");
@@ -2126,96 +2125,24 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated) onNodeCreated.apply(this, arguments);
                 
+                // 1. 挂载后台原生数据控件 (负责保存数据和连线)
                 const promptWidget = this.widgets.find(w => w.name === "prompt_text" || w.name === "输入prompt");
                 if (!promptWidget) return;
 
-                const listContainer = document.createElement("div");
-                listContainer.style.cssText = "width: 100%; min-height: 50px; max-height: 180px; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; font-family: sans-serif;";
-                listContainer.addEventListener("wheel", (e) => e.stopPropagation(), { passive: false });
-                listContainer.addEventListener("pointerdown", (e) => e.stopPropagation());
+                let scopeWidget = this.widgets.find(w => w.name === "随机抽取范围");
+                if (!scopeWidget) scopeWidget = this.addWidget("combo", "随机抽取范围", "当前三级分类", () => {}, { values: ["当前三级分类", "当前二级分类", "当前一级分类"] });
 
-                const header = document.createElement("div");
-                header.style.cssText = "display: flex; justify-content: space-between; font-size: 11px; color: #ff6b9d; font-weight: bold; padding: 0 5px 4px 5px; border-bottom: 1px dashed rgba(255,107,157,0.4); margin-bottom: 4px;";
-                header.innerHTML = `<span>&lt;Prompt&gt;</span><span style="padding-right:38px;">&lt;权重&gt;</span>`;
-                
-                const listBody = document.createElement("div"); 
-                listBody.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
-                
-                listContainer.appendChild(header); 
-                listContainer.appendChild(listBody);
+                let autoRandomWidget = this.widgets.find(w => w.name === "自动随机抽取");
+                if (!autoRandomWidget) autoRandomWidget = this.addWidget("toggle", "自动随机抽取", false, () => {});
 
-                const htmlListWidget = this.addDOMWidget("prompt_list", "HTML", listContainer, { serialize: false, hideOnZoom: false });
+                let countWidget = this.widgets.find(w => w.name === "抽取数量");
 
-                let cachedList = []; let isUpdatingFromList = false;
-
-                const renderList = () => {
-                    listBody.innerHTML = '';
-                    try {
-                        if (!isUpdatingFromList && UTILS && UTILS.parsePromptText) {
-                            cachedList = UTILS.parsePromptText(promptWidget.value || "");
-                        }
-                    } catch (err) {
-                        console.error("[PromptManager] 解析 Prompt 失败:", err);
-                    }
-
-                    if (!cachedList || cachedList.length === 0) { 
-                        listBody.innerHTML = '<div style="color:#555; font-size:11px; text-align:center; padding:10px;">暂无 Prompt</div>'; 
-                        return; 
-                    }
-
-                    cachedList.forEach((item, index) => {
-                        const row = document.createElement("div");
-                        row.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: #252525; padding: 4px 6px; border-radius: 4px; transition: 0.2s; ${item.enabled === false ? 'opacity: 0.4;' : ''}`;
-                        const tagSpan = document.createElement("span");
-                        tagSpan.style.cssText = `color: #ddd; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; cursor: pointer; user-select: none; ${item.enabled === false ? 'text-decoration: line-through;' : ''}`;
-                        tagSpan.innerText = item.tag;
-
-                        tagSpan.ondblclick = (e) => {
-                            e.stopPropagation(); isUpdatingFromList = true; item.enabled = item.enabled === false ? true : false;
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        const rightCtrl = document.createElement("div"); rightCtrl.style.cssText = "display: flex; align-items: center; gap: 6px;";
-                        const numInput = document.createElement("input");
-                        numInput.type = "number"; numInput.step = "0.1"; numInput.value = item.weight.toFixed(1); numInput.disabled = item.enabled === false;
-                        numInput.style.cssText = `width: 45px; background: #111; border: 1px solid #444; color: #ff6b9d; font-size: 12px; font-weight: bold; border-radius: 4px; text-align: center; outline: none; ${item.enabled === false ? 'cursor: not-allowed; opacity: 0.5;' : ''}`;
-                        numInput.onchange = (e) => {
-                            isUpdatingFromList = true; item.weight = parseFloat(e.target.value) || 1.0;
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        const delBtn = document.createElement("button"); delBtn.innerHTML = "×";
-                        delBtn.style.cssText = "background: #5a1a1a; color: #f44336; border: none; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s;";
-                        delBtn.onclick = (e) => {
-                            e.stopPropagation(); isUpdatingFromList = true; cachedList.splice(index, 1);
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        rightCtrl.appendChild(numInput); rightCtrl.appendChild(delBtn); row.appendChild(tagSpan); row.appendChild(rightCtrl); listBody.appendChild(row);
-                    });
-                };
-
-                const originalCallback = promptWidget.callback;
-                promptWidget.callback = function() { 
-                    if (originalCallback) originalCallback.apply(this, arguments); 
-                    if (!isUpdatingFromList) renderList(); 
-                };
-                renderList();
-
-                const btnOpen = this.addWidget("button", "打开 Prompt 浏览器", "open", async () => {
+                // 隐形的逻辑按钮：用于被我们的 HTML 按钮调用
+                const btnOpen = this.addWidget("button", "打开 Prompt 图库", "open", async () => {
                     STATE.currentActiveWidget = promptWidget;
                     STATE.localDB = await UTILS.getAndMigrateDB();
-                    openNativeBrowser();
+                    window.PM_Global.ui.openNativeBrowser();
                 });
-
-                // 新增：抽取范围下拉框
-                let scopeWidget = this.widgets.find(w => w.name === "随机抽取范围");
-                if (!scopeWidget) {
-                    scopeWidget = this.addWidget("combo", "随机抽取范围", "当前三级分类", () => {}, { values: ["当前三级分类", "当前二级分类", "当前一级分类"] });
-                }
 
                 const btnRandom = this.addWidget("button", "随机抽取", "random", async () => {
                     if (Object.keys(STATE.localDB.contexts || {}).length === 0) STATE.localDB = await UTILS.getAndMigrateDB();
@@ -2225,18 +2152,13 @@ app.registerExtension({
                     }
                     if (!STATE.currentModelId || !STATE.currentModeId) return;
 
-                    // 1. 获取用户的范围选项
                     const scope = scopeWidget ? scopeWidget.value : "当前三级分类";
-
-                    // 2. 收集所有符合条件的上下文 (ctx)
                     let targetCtxs = [];
                     const modelData = STATE.localDB.models.main_models[STATE.currentModelId];
 
                     if (scope === "当前一级分类") {
-                        // 目标：当前一级分类下的所有三级分类
                         Object.keys(modelData.modes).forEach(mId => targetCtxs.push(`${STATE.currentModelId}_${mId}`));
                     } else if (scope === "当前二级分类") {
-                        // 目标：通过当前三级分类的 group 属性反查同属一个二级分类的兄弟节点
                         const currentCatId = modelData.modes[STATE.currentModeId]?.group || 'custom';
                         Object.entries(modelData.modes).forEach(([mId, m]) => {
                             if (m.group === currentCatId || (!m.group && currentCatId === 'custom')) {
@@ -2244,55 +2166,214 @@ app.registerExtension({
                             }
                         });
                     } else {
-                        // 目标：仅当前三级分类
                         targetCtxs.push(`${STATE.currentModelId}_${STATE.currentModeId}`);
                     }
 
-                    // 3. 【绝对随机核心】：把所有涉及的分类数据倒入一个 Set 总池子进行去重，扁平化处理
                     let pool = new Set();
                     targetCtxs.forEach(ctx => {
                         const ctxData = STATE.localDB.contexts[ctx];
-                        if (ctxData && ctxData.items) {
-                            ctxData.items.forEach(item => pool.add(item));
-                        }
+                        if (ctxData && ctxData.items) ctxData.items.forEach(item => pool.add(item));
                     });
 
                     const dataItems = Array.from(pool);
                     if (dataItems.length === 0) return alert("当前选择范围内没有任何提示词卡片！");
 
-                    // 4. 抽取逻辑
-                    const countWidget = this.widgets.find(w => w.name === "抽取数量");
                     const desiredCount = countWidget ? countWidget.value : 3;
-
                     const count = Math.min(dataItems.length, desiredCount);
-                    
-                    // 使用原生 Fisher-Yates 算法对四万数据的总池子进行完全公平洗牌
                     const selected = UTILS.pmShuffle(dataItems).slice(0, count);
 
                     const newParsed = selected.map(tag => ({ original: tag, tag: tag, weight: 1.0, enabled: true }));
                     promptWidget.value = UTILS.buildPromptText(newParsed); 
                     app.graph.setDirtyCanvas(true); 
-                    renderList();
+                    if (typeof this.updateHtmlList === 'function') this.updateHtmlList();
                 });
 
-                const autoRandomWidget = this.widgets.find(w => w.name === "自动随机抽取");
-                const countWidget = this.widgets.find(w => w.name === "抽取数量");
+                // 同步声明默认尺寸，防止覆盖用户手动调整并保存在工作流里的尺寸
+                this.size = [420, 480]; 
 
-                // 重新排布节点的 UI 顺序
-                const desiredOrder = [
-                    btnOpen,
-                    scopeWidget,       // 插入下拉框
-                    btnRandom,
-                    autoRandomWidget,
-                    countWidget,
-                    promptWidget,
-                    htmlListWidget
-                ].filter(Boolean);     
+                // 2. 隐藏所有原生的丑陋控件，彻底剥夺 LiteGraph 的渲染权
+                setTimeout(() => {
+                    this.widgets.forEach(w => {
+                        if (w.type !== "HTML") {
+                            w.type = "custom_hidden";
+                            w.hidden = true;
+                            w.computeSize = () => [0, 0];
+                            w.draw = function() {}; // 杀掉底层绘制
+                            if (w.inputEl) { w.inputEl.style.display = "none"; w.inputEl.style.visibility = "hidden"; }
+                        }
+                    });
+                }, 10);
 
-                const otherWidgets = this.widgets.filter(w => !desiredOrder.includes(w));
-                this.widgets = [...desiredOrder, ...otherWidgets];
+                // ==========================================
+                // 3. 构建全新的 HTML 缝合界面
+                // ==========================================
+                const container = document.createElement("div");
+                container.style.cssText = "width: 100%; height: 100%; display: flex; flex-direction: column; gap: 8px; font-family: sans-serif; pointer-events: auto; padding: 4px; box-sizing: border-box;";
+
+                // 终极事件护盾
+                const stopProp = (e) => e.stopPropagation();
+                ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'dblclick', 'wheel', 'keydown', 'keyup'].forEach(evt => {
+                    container.addEventListener(evt, stopProp, { passive: false });
+                });
+
+                // A. 顶部图库主按钮 (去除了 Emoji)
+                const uiBtnOpen = document.createElement("button");
+                uiBtnOpen.innerHTML = "打开 Prompt 图库浏览器";
+                uiBtnOpen.style.cssText = "width: 100%; padding: 12px; background: #ff6b9d; color: #fff; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 15px rgba(255,107,157,0.3); flex-shrink: 0;";
+                uiBtnOpen.onmouseover = () => uiBtnOpen.style.background = "#ff4785";
+                uiBtnOpen.onmouseout = () => uiBtnOpen.style.background = "#ff6b9d";
+                uiBtnOpen.onclick = () => { if(btnOpen) btnOpen.callback(); };
+
+                // B. 暗黑风控制面板 (单排设计)
+                const ctrlPanel = document.createElement("div");
+                ctrlPanel.style.cssText = "background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;";
                 
-                this.setSize([400, 420]);
+                ctrlPanel.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <!-- 数量 -->
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <span style="color: #ccc; font-size: 12px; font-weight: bold; white-space: nowrap;">数量</span>
+                            <input type="number" id="ui-num-count" min="1" max="100" style="width: 45px; background: #111; color: #ff6b9d; border: 1px solid #444; border-radius: 4px; padding: 4px; font-size: 12px; text-align: center; outline: none; font-weight: bold;">
+                        </div>
+                        
+                        <!-- 抽取范围 -->
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <span style="color: #ccc; font-size: 12px; font-weight: bold; white-space: nowrap;">范围</span>
+                            <select id="ui-sel-scope" style="background: #111; color: #ff6b9d; border: 1px solid #444; border-radius: 4px; padding: 4px; font-size: 12px; outline: none; width: 110px; font-weight: bold;">
+                                <option value="当前三级分类">三级分类</option>
+                                <option value="当前二级分类">二级分类</option>
+                                <option value="当前一级分类">一级分类</option>
+                            </select>
+                        </div>
+                        
+                        <!-- 自动抽取 -->
+                        <label style="display: flex; align-items: center; gap: 4px; color: #ccc; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap;">
+                            自动抽取 <input type="checkbox" id="ui-chk-auto" style="accent-color: #ff6b9d; cursor: pointer; width: 14px; height: 14px; margin:0;">
+                        </label>
+                    </div>
+                    <!-- 立即随机抽取按钮 (去除了 Emoji) -->
+                    <button id="ui-btn-rand" style="width: 100%; padding: 8px; background: #222; color: #ff6b9d; border: 1px dashed #ff6b9d; border-radius: 6px; font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.2s;">立即随机抽取</button>
+                `;
+
+                // C. 手动文本输入框
+                const uiTextarea = document.createElement("textarea");
+                uiTextarea.placeholder = "在此手动输入 Prompt...";
+                uiTextarea.style.cssText = "width: 100%; height: 60px; background: #111; color: #eee; border: 1px solid #333; border-radius: 8px; padding: 8px; font-size: 12px; resize: none; outline: none; box-sizing: border-box; line-height: 1.4; flex-shrink: 0;";
+                
+                // D. 底部列表区
+                const listContainer = document.createElement("div");
+                listContainer.style.cssText = "flex: 1; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;";
+                listContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ff6b9d; font-weight: bold; padding: 0 4px 6px 4px; border-bottom: 1px dashed rgba(255,107,157,0.4); margin-bottom: 4px;">
+                        <span>&lt;解析列表&gt;</span><span style="padding-right:38px;">&lt;权重&gt;</span>
+                    </div>
+                    <div id="ui-list-body" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                `;
+
+                // 拼装
+                container.appendChild(uiBtnOpen);
+                container.appendChild(ctrlPanel);
+                container.appendChild(uiTextarea);
+                container.appendChild(listContainer);
+                
+                this.addDOMWidget("browser_html_ui", "HTML", container, { serialize: false, hideOnZoom: false });
+
+                // ==========================================
+                // 4. 事件绑定与数据同步逻辑
+                // ==========================================
+                setTimeout(() => {
+                    // 初始化值同步
+                    const elScope = container.querySelector("#ui-sel-scope");
+                    const elCount = container.querySelector("#ui-num-count");
+                    const elAuto = container.querySelector("#ui-chk-auto");
+                    const elRand = container.querySelector("#ui-btn-rand");
+                    const elListBody = container.querySelector("#ui-list-body");
+
+                    if (scopeWidget) elScope.value = scopeWidget.value;
+                    if (countWidget) elCount.value = countWidget.value;
+                    if (autoRandomWidget) elAuto.checked = autoRandomWidget.value;
+                    uiTextarea.value = promptWidget.value || "";
+
+                    // HTML -> Native 同步
+                    elScope.onchange = (e) => { if(scopeWidget) { scopeWidget.value = e.target.value; app.graph.setDirtyCanvas(true); }};
+                    elCount.onchange = (e) => { if(countWidget) { countWidget.value = parseInt(e.target.value); app.graph.setDirtyCanvas(true); }};
+                    elAuto.onchange = (e) => { if(autoRandomWidget) { autoRandomWidget.value = e.target.checked; app.graph.setDirtyCanvas(true); }};
+                    
+                    elRand.onmouseover = () => elRand.style.background = "rgba(255,107,157,0.1)";
+                    elRand.onmouseout = () => elRand.style.background = "#222";
+                    elRand.onclick = () => { if(btnRandom) btnRandom.callback(); };
+
+                    uiTextarea.oninput = (e) => {
+                        promptWidget.value = e.target.value;
+                        app.graph.setDirtyCanvas(true);
+                        this.updateHtmlList();
+                    };
+
+                    // Native -> HTML 列表渲染引擎
+                    let cachedList = []; 
+                    let isUpdatingFromList = false;
+
+                    this.updateHtmlList = () => {
+                        if (!isUpdatingFromList && uiTextarea.value !== promptWidget.value) {
+                            uiTextarea.value = promptWidget.value || "";
+                        }
+                        
+                        elListBody.innerHTML = '';
+                        try {
+                            if (!isUpdatingFromList && UTILS && UTILS.parsePromptText) {
+                                cachedList = UTILS.parsePromptText(promptWidget.value || "");
+                            }
+                        } catch (err) {}
+
+                        if (!cachedList || cachedList.length === 0) { 
+                            elListBody.innerHTML = '<div style="color:#555; font-size:11px; text-align:center; padding:10px;">暂无 Prompt</div>'; 
+                            return; 
+                        }
+
+                        cachedList.forEach((item, index) => {
+                            const row = document.createElement("div");
+                            row.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: #252525; padding: 4px 6px; border-radius: 4px; transition: 0.2s; ${item.enabled === false ? 'opacity: 0.4;' : ''}`;
+                            const tagSpan = document.createElement("span");
+                            tagSpan.style.cssText = `color: #ddd; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; cursor: pointer; user-select: none; ${item.enabled === false ? 'text-decoration: line-through;' : ''}`;
+                            tagSpan.innerText = item.tag;
+
+                            tagSpan.ondblclick = (e) => {
+                                e.stopPropagation(); isUpdatingFromList = true; item.enabled = item.enabled === false ? true : false;
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            const rightCtrl = document.createElement("div"); rightCtrl.style.cssText = "display: flex; align-items: center; gap: 6px;";
+                            const numInput = document.createElement("input");
+                            numInput.type = "number"; numInput.step = "0.1"; numInput.value = item.weight.toFixed(1); numInput.disabled = item.enabled === false;
+                            numInput.style.cssText = `width: 45px; background: #111; border: 1px solid #444; color: #ff6b9d; font-size: 12px; font-weight: bold; border-radius: 4px; text-align: center; outline: none; ${item.enabled === false ? 'cursor: not-allowed; opacity: 0.5;' : ''}`;
+                            numInput.onchange = (e) => {
+                                isUpdatingFromList = true; item.weight = parseFloat(e.target.value) || 1.0;
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            const delBtn = document.createElement("button"); delBtn.innerHTML = "×";
+                            delBtn.style.cssText = "background: #5a1a1a; color: #f44336; border: none; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s;";
+                            delBtn.onclick = (e) => {
+                                e.stopPropagation(); isUpdatingFromList = true; cachedList.splice(index, 1);
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            rightCtrl.appendChild(numInput); rightCtrl.appendChild(delBtn); row.appendChild(tagSpan); row.appendChild(rightCtrl); elListBody.appendChild(row);
+                        });
+                    };
+
+                    // 挂载回调，拦截任何外部（比如节点连线）带来的数值变化
+                    const originalCallback = promptWidget.callback;
+                    promptWidget.callback = function() { 
+                        if (originalCallback) originalCallback.apply(this, arguments); 
+                        if (!isUpdatingFromList) this.updateHtmlList(); 
+                    }.bind(this);
+                    
+                    this.updateHtmlList();
+                }, 50);
             };
         }
     }

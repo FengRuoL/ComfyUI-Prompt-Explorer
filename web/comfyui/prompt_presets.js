@@ -315,7 +315,7 @@ window.PM_Global.ui.openCombosModal = async function() {
     if (!modal) {
         modal = document.createElement("div"); modal.id = "pm-combos-modal"; modal.className = "pm-modal-overlay"; 
         modal.innerHTML = `
-            <div class="pm-create-box" style="width: 800px; height: 80vh;">
+            <div class="pm-create-box" style="width: 860px; height: 85vh;">
                 <div class="pm-create-header">
                     <b style="color:#eee;">组合预设管理 (本地存储)</b>
                     <button class="pm-close-btn" onclick="pmHideModal('pm-combos-modal')">关闭</button>
@@ -327,7 +327,7 @@ window.PM_Global.ui.openCombosModal = async function() {
                         <button class="pm-action-btn" onclick="document.getElementById('pm-import-combos-file').click()">导入配置</button>
                         <input type="file" id="pm-import-combos-file" accept=".json" style="display:none;" onchange="PM_Global.ui.importCombos(event)">
                     </div>
-                    <div id="pm-combos-content" style="flex:1; overflow-y:auto; padding:15px; padding-bottom: 80px; background:#111; box-sizing: border-box;"></div>
+                    <div id="pm-combos-content" style="flex:1; overflow-y:auto; overflow-x:hidden; padding:15px; padding-bottom: 80px; background:#111; box-sizing: border-box;"></div>
                 </div>
             </div>
         `;
@@ -367,13 +367,26 @@ window.PM_Global.ui.openCombosModal = async function() {
     }
     
     const content = document.getElementById("pm-combos-content");
-    if (d.combos.length === 0) content.innerHTML = `<div style="color:#555; text-align:center; padding:50px;">暂无组合预设。</div>`;
-    else content.innerHTML = '';
+    
+    // === 核心改造：应用自适应网格布局 ===
+    content.style.display = "grid";
+    content.style.gridTemplateColumns = "repeat(auto-fill, minmax(190px, 1fr))";
+    content.style.gridAutoRows = "max-content"; // 强制按内容最大高度撑开每一行
+    content.style.gap = "15px";
+    // 删除了 align-items: start，让同行卡片自动等高拉伸
+
+    if (d.combos.length === 0) {
+        content.style.display = "block"; // 没有内容时切回 block 显示居中文字
+        content.innerHTML = `<div style="color:#555; text-align:center; padding:50px;">暂无组合预设。</div>`;
+    } else {
+        content.innerHTML = '';
+    }
 
     d.combos.forEach((c, idx) => {
         const div = document.createElement("div"); 
         div.className = "pm-combo-card";
-        div.style.transition = "border 0.2s";
+        // 核心改造：增加 height:100% 和 margin:0 覆盖掉原有 CSS 引起的布局计算错误
+        div.style.cssText = "height: 100%; margin: 0; background: #222; border: 1px solid #333; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; transition: border 0.2s; position: relative;";
         
         div.draggable = true;
         div.ondragstart = (e) => { e.dataTransfer.setData("text/plain", idx); e.stopPropagation(); };
@@ -392,23 +405,29 @@ window.PM_Global.ui.openCombosModal = async function() {
             }
         };
 
-const imgUrl = c.image ? c.image : ''; // 移除时间戳
+        const imgUrl = c.image ? c.image : ''; 
         const safeImgUrl = UTILS.escapeHTML(imgUrl);
         const safeImgUrlForEvent = encodeURIComponent(imgUrl);
-        const imgHtml = c.image ? `<img src="${safeImgUrl}" style="width:100px; height:100px; object-fit:cover; border-radius:8px; cursor:pointer;" onclick="document.getElementById('pm-viewer-img').src=decodeURIComponent('${safeImgUrlForEvent}'); pmShowModal('pm-image-viewer');">` : `<div style="width:100px; height:100px; background:#222; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#444; font-size:12px;">无预览图</div>`;
+        
+        // 核心改造：图片高度减小到 150px，防止卡片过长
+        const imgHtml = c.image 
+            ? `<img src="${safeImgUrl}" style="width:100%; height:150px; object-fit:cover; display:block; cursor:pointer;" onclick="document.getElementById('pm-viewer-img').src=decodeURIComponent('${safeImgUrlForEvent}'); pmShowModal('pm-image-viewer');">` 
+            : `<div style="width:100%; height:150px; background:#111; display:flex; align-items:center; justify-content:center; color:#444; font-size:12px;">无预览图</div>`;
+        
         const promptStr = c.elements.map(e => e.weight != 1 ? `(${e.tag}:${e.weight})` : e.tag).join(', ');
 
+        // 核心改造：减小空白间距，压缩按键文字 (11px, nowrap) 防止在不同分辨率下折行
         div.innerHTML = `
-            <div style="display:flex; align-items:center; justify-content:center; padding-right:5px; color:#555; cursor:grab; font-size:18px;" title="拖拽排序">☰</div>
+            <div style="position:absolute; top:6px; left:6px; background:rgba(0,0,0,0.65); color:#fff; padding:3px 8px; border-radius:4px; font-size:12px; cursor:grab; z-index:10; backdrop-filter: blur(2px); user-select:none;" title="拖拽此处进行排序">☰ 排序</div>
             ${imgHtml}
-            <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
-                <b style="color:#ff6b9d; font-size:16px; margin-bottom:5px;">${UTILS.escapeHTML(c.name)}</b>
-                <div style="color:#888; font-size:12px; line-height:1.4; max-height:40px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${UTILS.escapeHTML(promptStr) || '暂无标签...'}</div>
-            </div>
-            <div style="display:flex; flex-direction:column; justify-content:center; gap:8px; min-width:110px;">
-                <button class="pm-action-btn" style="color:#fff; padding:6px 10px; font-size:12px;" onclick="PM_Global.ui.exportComboToBrowser(${idx}, '${ctx}')">导至节点</button>
-                <button class="pm-action-btn" style="padding:6px 10px; font-size:12px;" onclick="PM_Global.ui.openComboEditModal(${idx}, '${ctx}')">编辑</button>
-                <button class="pm-action-btn" style="color:#f44336; border-color:#5a1a1a; padding:6px 10px; font-size:12px;" onclick="PM_Global.ui.deleteCombo(${idx}, '${ctx}')">删除</button>
+            <div style="padding: 8px; display: flex; flex-direction: column; flex: 1;">
+                <b style="color:#ff6b9d; font-size:14px; margin-bottom:4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${UTILS.escapeHTML(c.name)}">${UTILS.escapeHTML(c.name)}</b>
+                <div style="color:#888; font-size:11px; line-height:1.4; height:31px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; margin-bottom:8px;" title="${UTILS.escapeHTML(promptStr)}">${UTILS.escapeHTML(promptStr) || '暂无标签...'}</div>
+                <div style="display:flex; justify-content:space-between; gap:4px; margin-top: auto;">
+                    <button class="pm-action-btn" style="flex:1; color:#fff; padding:5px 2px; font-size:11px; white-space:nowrap; border-color:#555;" onclick="PM_Global.ui.exportComboToBrowser(${idx}, '${ctx}')">导至节点</button>
+                    <button class="pm-action-btn" style="flex:1; padding:5px 2px; font-size:11px; white-space:nowrap; border-color:#555;" onclick="PM_Global.ui.openComboEditModal(${idx}, '${ctx}')">编辑</button>
+                    <button class="pm-action-btn" style="flex:1; color:#f44336; border-color:#5a1a1a; padding:5px 2px; font-size:11px; white-space:nowrap;" onclick="PM_Global.ui.deleteCombo(${idx}, '${ctx}')">删除</button>
+                </div>
             </div>
         `;
         content.appendChild(div);
@@ -623,76 +642,20 @@ app.registerExtension({
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated) onNodeCreated.apply(this, arguments);
-                const promptWidget = this.widgets.find(w => w.name === "prompt_text" || w.name === "输入prompt");
-                if (promptWidget && promptWidget.inputEl) { promptWidget.inputEl.style.display = "none"; promptWidget.computeSize = () => [0, -4]; }
-
-                const listContainer = document.createElement("div");
-                listContainer.style.cssText = "width: 100%; min-height: 50px; max-height: 180px; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; font-family: sans-serif;";
-                listContainer.addEventListener("wheel", (e) => e.stopPropagation(), { passive: false });
-                listContainer.addEventListener("pointerdown", (e) => e.stopPropagation());
-
-                const header = document.createElement("div");
-                header.style.cssText = "display: flex; justify-content: space-between; font-size: 11px; color: #ff6b9d; font-weight: bold; padding: 0 5px 4px 5px; border-bottom: 1px dashed rgba(255,107,157,0.4); margin-bottom: 4px;";
-                header.innerHTML = `<span>&lt;盲盒结果区&gt;</span><span style="padding-right:38px;">&lt;权重&gt;</span>`;
                 
-                const listBody = document.createElement("div");
-                listBody.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
-                listContainer.appendChild(header); listContainer.appendChild(listBody);
-                this.addDOMWidget("prompt_list", "HTML", listContainer, { serialize: false, hideOnZoom: false });
+                // 同步声明尺寸，解决刷新回弹问题
+                this.size = [420, 360];
 
-                let cachedList = []; let isUpdatingFromList = false;
-
-                const renderList = () => {
-                    listBody.innerHTML = '';
-                    if (!isUpdatingFromList && UTILS && UTILS.parsePromptText) {
-                        cachedList = UTILS.parsePromptText(promptWidget.value || "");
-                    }
-                    if (cachedList.length === 0) { listBody.innerHTML = '<div style="color:#555; font-size:11px; text-align:center; padding:10px;">点击按钮抽取盲盒</div>'; return; }
-
-                    cachedList.forEach((item, index) => {
-                        const row = document.createElement("div");
-                        row.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: #252525; padding: 4px 6px; border-radius: 4px; transition: 0.2s; ${item.enabled === false ? 'opacity: 0.4;' : ''}`;
-                        const tagSpan = document.createElement("span");
-                        tagSpan.style.cssText = `color: #ddd; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; cursor: pointer; user-select: none; ${item.enabled === false ? 'text-decoration: line-through;' : ''}`;
-                        tagSpan.innerText = item.tag;
-
-                        tagSpan.ondblclick = (e) => {
-                            e.stopPropagation(); isUpdatingFromList = true; item.enabled = item.enabled === false ? true : false;
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        const rightCtrl = document.createElement("div"); rightCtrl.style.cssText = "display: flex; align-items: center; gap: 6px;";
-                        const numInput = document.createElement("input");
-                        numInput.type = "number"; numInput.step = "0.1"; numInput.value = item.weight.toFixed(1); numInput.disabled = item.enabled === false;
-                        numInput.style.cssText = `width: 45px; background: #111; border: 1px solid #444; color: #ff6b9d; font-size: 12px; font-weight: bold; border-radius: 4px; text-align: center; outline: none; ${item.enabled === false ? 'cursor: not-allowed; opacity: 0.5;' : ''}`;
-                        numInput.onchange = (e) => {
-                            isUpdatingFromList = true; item.weight = parseFloat(e.target.value) || 1.0;
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        const delBtn = document.createElement("button"); delBtn.innerHTML = "×";
-                        delBtn.style.cssText = "background: #5a1a1a; color: #f44336; border: none; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s;";
-                        delBtn.onclick = (e) => {
-                            e.stopPropagation(); isUpdatingFromList = true; cachedList.splice(index, 1);
-                            promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); renderList();
-                            setTimeout(() => { isUpdatingFromList = false; }, 50);
-                        };
-
-                        rightCtrl.appendChild(numInput); rightCtrl.appendChild(delBtn);
-                        row.appendChild(tagSpan); row.appendChild(rightCtrl); listBody.appendChild(row);
-                    });
-                };
-
-                const originalCallback = promptWidget.callback;
-                promptWidget.callback = function() { if (originalCallback) originalCallback.apply(this, arguments); if (!isUpdatingFromList) renderList(); };
-                renderList();
-
-                // === 拦截器注入：强制锁定前缀，防止被 ComfyUI 或旧数据重置 ===
+                // 1. 获取所有原生控件
                 const groupWidget = this.widgets.find(w => w.name === "选择分组");
+                const countWidget = this.widgets.find(w => w.name === "抽取数量");
+                const promptWidget = this.widgets.find(w => w.name === "prompt_text" || w.name === "输入prompt");
+                
+                let autoRandomWidget = this.widgets.find(w => w.name === "自动随机抽取");
+                if (!autoRandomWidget) autoRandomWidget = this.addWidget("toggle", "自动随机抽取", false, () => {});
+
+                // 安全自动修复：防止旧数据由于改版导致分组名匹配报错
                 if (groupWidget) {
-                    // 安全自动修复：防止用户旧存档的单纯 "分组名" 报错，自动补全 "[模型名] 分组名"
                     const checkMigrate = () => {
                         if (groupWidget.value && groupWidget.options?.values) {
                             if (!groupWidget.value.startsWith("[")) {
@@ -705,20 +668,12 @@ app.registerExtension({
                     setTimeout(checkMigrate, 500);
                 }
 
-                let autoRandomWidget = this.widgets.find(w => w.name === "自动随机抽取");
-                if (!autoRandomWidget) {
-                    autoRandomWidget = this.addWidget("toggle", "自动随机抽取", false, () => {});
-                }
-
+                // 原生的抽取逻辑
                 const btnDraw = this.addWidget("button", "抽取盲盒", "draw_blind_box", async () => {
                     if (Object.keys(STATE.localDB.contexts || {}).length === 0) STATE.localDB = await UTILS.getAndMigrateDB();
-                    const currentGroupWidget = this.widgets.find(w => w.name === "选择分组");
-                    const countWidget = this.widgets.find(w => w.name === "抽取数量");
+                    if (!groupWidget || !countWidget || groupWidget.value === "无可用分组_请先创建") return alert("请先创建收藏分组并选择！");
                     
-                    if (!currentGroupWidget || !countWidget || currentGroupWidget.value === "无可用分组_请先创建") return alert("请先创建收藏分组并选择！");
-                    
-                    // 修复：同步将 .*? 改为 .* 贪婪匹配，防止用户模型名字自带括号导致切片失败
-                    const parts = currentGroupWidget.value.match(/^\[(.*)\]\s*(.*)$/);
+                    const parts = groupWidget.value.match(/^\[(.*)\]\s*(.*)$/);
                     if (!parts) return alert("分组格式无法识别！请尝试重新下拉选择该分组刷新数据。");
                     
                     const m_name = parts[1];
@@ -738,40 +693,178 @@ app.registerExtension({
 
                     if (!targetGroup || !targetGroup.items || targetGroup.items.length === 0) return alert(`分组 [${g_name}] 内没有任何卡片，无法抽取！`);
 
-const count = Math.min(targetGroup.items.length, countWidget.value);
+                    const count = Math.min(targetGroup.items.length, countWidget.value);
                     const shuffled = UTILS.pmShuffle(targetGroup.items);
                     const selected = shuffled.slice(0, count);
 
                     const newParsed = selected.map(tag => ({ original: tag, tag: tag, weight: 1.0, enabled: true }));
-                    promptWidget.value = UTILS.buildPromptText(newParsed); app.graph.setDirtyCanvas(true); renderList();
+                    promptWidget.value = UTILS.buildPromptText(newParsed); app.graph.setDirtyCanvas(true);
+                    if (this.updateHtmlList) this.updateHtmlList();
                 });
-                
-                // === 修复 3: 重新对节点的 Widgets 排序 ===
-                const groupWidgetRef = this.widgets.find(w => w.name === "选择分组");
-                const countWidgetRef = this.widgets.find(w => w.name === "抽取数量");
-                const promptTextWidgetRef = this.widgets.find(w => w.name === "prompt_text" || w.name === "输入prompt");
-                const htmlListWidgetRef = this.widgets.find(w => w.type === "HTML" && w.name === "prompt_list");
 
-                const desiredOrder = [
-                    groupWidgetRef,
-                    btnDraw,             // 抽取盲盒 挪到上面
-                    autoRandomWidget,    // 自动随机抽取 挪到下面
-                    countWidgetRef,
-                    promptTextWidgetRef,
-                    htmlListWidgetRef
-                ].filter(Boolean);
+                // 2. 彻底抹杀原生控件的幽灵占位 (解决不能拖动画布的问题)
+                setTimeout(() => {
+                    this.widgets.forEach(w => {
+                        if (w.type !== "HTML") {
+                            w.type = "custom_hidden";
+                            w.hidden = true;
+                            w.computeSize = () => [0, 0];
+                            w.draw = function() {}; 
+                            if (w.inputEl) { w.inputEl.style.display = "none"; w.inputEl.style.visibility = "hidden"; }
+                        }
+                    });
+                }, 10);
 
-                const otherWidgets = this.widgets.filter(w => !desiredOrder.includes(w));
-                this.widgets = [...desiredOrder, ...otherWidgets];
+                // ==========================================
+                // 3. 构建全新的 HTML 高级风格界面
+                // ==========================================
+                const container = document.createElement("div");
+                container.style.cssText = "width: 100%; height: 100%; display: flex; flex-direction: column; gap: 8px; font-family: sans-serif; pointer-events: auto; padding: 4px; box-sizing: border-box;";
+
+                const stopProp = (e) => e.stopPropagation();
+                ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'dblclick', 'wheel', 'keydown', 'keyup'].forEach(evt => {
+                    container.addEventListener(evt, stopProp, { passive: false });
+                });
+
+                // 控制面板
+                const ctrlPanel = document.createElement("div");
+                ctrlPanel.style.cssText = "background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;";
                 
-                this.setSize([400, 260]);
+                ctrlPanel.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <span style="color: #ccc; font-size: 12px; font-weight: bold; white-space: nowrap;">数量</span>
+                            <input type="number" id="ui-num-count" min="1" max="100" style="width: 45px; background: #111; color: #ff6b9d; border: 1px solid #444; border-radius: 4px; padding: 4px; font-size: 12px; text-align: center; outline: none; font-weight: bold;">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0;">
+                            <span style="color: #ccc; font-size: 12px; font-weight: bold; white-space: nowrap;">分组</span>
+                            <select id="ui-sel-group" style="background: #111; color: #ff6b9d; border: 1px solid #444; border-radius: 4px; padding: 4px; font-size: 12px; outline: none; width: 100%; font-weight: bold; cursor: pointer;"></select>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 4px; color: #ccc; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap;">
+                            自动 <input type="checkbox" id="ui-chk-auto" style="accent-color: #ff6b9d; cursor: pointer; width: 14px; height: 14px; margin:0;">
+                        </label>
+                    </div>
+                    <button id="ui-btn-rand" style="width: 100%; padding: 8px; background: #222; color: #ff6b9d; border: 1px dashed #ff6b9d; border-radius: 6px; font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.2s;">立即抽取盲盒</button>
+                `;
+
+                // 列表区
+                const listContainer = document.createElement("div");
+                listContainer.style.cssText = "flex: 1; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;";
+                listContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ff6b9d; font-weight: bold; padding: 0 4px 6px 4px; border-bottom: 1px dashed rgba(255,107,157,0.4); margin-bottom: 4px;">
+                        <span>&lt;盲盒结果列表&gt;</span><span style="padding-right:38px;">&lt;权重&gt;</span>
+                    </div>
+                    <div id="ui-list-body" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                `;
+
+                container.appendChild(ctrlPanel);
+                container.appendChild(listContainer);
+                this.addDOMWidget("randomizer_html_ui", "HTML", container, { serialize: false, hideOnZoom: false });
+
+                // ==========================================
+                // 4. 事件绑定与数据同步逻辑
+                // ==========================================
+                setTimeout(() => {
+                    const elCount = container.querySelector("#ui-num-count");
+                    const elGroup = container.querySelector("#ui-sel-group");
+                    const elAuto = container.querySelector("#ui-chk-auto");
+                    const elRand = container.querySelector("#ui-btn-rand");
+                    const elListBody = container.querySelector("#ui-list-body");
+
+                    // 同步下拉框数据
+                    const syncGroupOptions = () => {
+                        if (groupWidget && groupWidget.options && groupWidget.options.values) {
+                            elGroup.innerHTML = groupWidget.options.values.map(opt => `<option value="${opt}">${opt}</option>`).join('');
+                            elGroup.value = groupWidget.value;
+                        }
+                    };
+                    syncGroupOptions();
+
+                    if (countWidget) elCount.value = countWidget.value;
+                    if (autoRandomWidget) elAuto.checked = autoRandomWidget.value;
+
+                    // HTML -> Native 双向绑定
+                    elCount.onchange = (e) => { if(countWidget) { countWidget.value = parseInt(e.target.value); app.graph.setDirtyCanvas(true); }};
+                    elGroup.onchange = (e) => { if(groupWidget) { groupWidget.value = e.target.value; app.graph.setDirtyCanvas(true); }};
+                    elAuto.onchange = (e) => { if(autoRandomWidget) { autoRandomWidget.value = e.target.checked; app.graph.setDirtyCanvas(true); }};
+                    
+                    elRand.onmouseover = () => elRand.style.background = "rgba(255,107,157,0.1)";
+                    elRand.onmouseout = () => elRand.style.background = "#222";
+                    elRand.onclick = () => { if(btnDraw) btnDraw.callback(); };
+
+                    // 列表渲染引擎
+                    let cachedList = []; 
+                    let isUpdatingFromList = false;
+
+                    this.updateHtmlList = () => {
+                        elListBody.innerHTML = '';
+                        try {
+                            if (!isUpdatingFromList && UTILS && UTILS.parsePromptText) {
+                                cachedList = UTILS.parsePromptText(promptWidget.value || "");
+                            }
+                        } catch (err) {}
+
+                        if (!cachedList || cachedList.length === 0) { 
+                            elListBody.innerHTML = '<div style="color:#555; font-size:11px; text-align:center; padding:10px;">点击按钮抽取盲盒</div>'; 
+                            return; 
+                        }
+
+                        cachedList.forEach((item, index) => {
+                            const row = document.createElement("div");
+                            row.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: #252525; padding: 4px 6px; border-radius: 4px; transition: 0.2s; ${item.enabled === false ? 'opacity: 0.4;' : ''}`;
+                            const tagSpan = document.createElement("span");
+                            tagSpan.style.cssText = `color: #ddd; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; cursor: pointer; user-select: none; ${item.enabled === false ? 'text-decoration: line-through;' : ''}`;
+                            tagSpan.innerText = item.tag;
+
+                            tagSpan.ondblclick = (e) => {
+                                e.stopPropagation(); isUpdatingFromList = true; item.enabled = item.enabled === false ? true : false;
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            const rightCtrl = document.createElement("div"); rightCtrl.style.cssText = "display: flex; align-items: center; gap: 6px;";
+                            const numInput = document.createElement("input");
+                            numInput.type = "number"; numInput.step = "0.1"; numInput.value = item.weight.toFixed(1); numInput.disabled = item.enabled === false;
+                            numInput.style.cssText = `width: 45px; background: #111; border: 1px solid #444; color: #ff6b9d; font-size: 12px; font-weight: bold; border-radius: 4px; text-align: center; outline: none; ${item.enabled === false ? 'cursor: not-allowed; opacity: 0.5;' : ''}`;
+                            numInput.onchange = (e) => {
+                                isUpdatingFromList = true; item.weight = parseFloat(e.target.value) || 1.0;
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            const delBtn = document.createElement("button"); delBtn.innerHTML = "×";
+                            delBtn.style.cssText = "background: #5a1a1a; color: #f44336; border: none; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s;";
+                            delBtn.onclick = (e) => {
+                                e.stopPropagation(); isUpdatingFromList = true; cachedList.splice(index, 1);
+                                promptWidget.value = UTILS.buildPromptText(cachedList); app.graph.setDirtyCanvas(true); this.updateHtmlList();
+                                setTimeout(() => { isUpdatingFromList = false; }, 50);
+                            };
+
+                            rightCtrl.appendChild(numInput); rightCtrl.appendChild(delBtn); row.appendChild(tagSpan); row.appendChild(rightCtrl); elListBody.appendChild(row);
+                        });
+                    };
+
+                    const originalCallback = promptWidget.callback;
+                    promptWidget.callback = function() { 
+                        if (originalCallback) originalCallback.apply(this, arguments); 
+                        if (!isUpdatingFromList) this.updateHtmlList(); 
+                    }.bind(this);
+
+                    const origGroupCb = groupWidget.callback;
+                    groupWidget.callback = function() {
+                        if (origGroupCb) origGroupCb.apply(this, arguments);
+                        syncGroupOptions();
+                    };
+                    
+                    this.updateHtmlList();
+                }, 50);
             };
         }
     }
 });
 
 // ==========================================
-// 4. 注册：Prompt组合预设加载器节点前端拦截 (全新双栏 UI)
+// 4. 注册：Prompt组合预设加载器节点前端拦截 (全新网格 UI)
 // ==========================================
 app.registerExtension({
     name: "PromptManager.ComboLoaderNode",
@@ -780,23 +873,30 @@ app.registerExtension({
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated) onNodeCreated.apply(this, arguments);
+                
+                // 同步声明默认尺寸，避免回弹
+                this.size = [450, 360];
 
-                // 强制隐藏后端的三个底层文本输入框
+                // 强制隐藏后端的三个底层文本输入框，并杀掉隐形占位符
                 setTimeout(() => {
                     const wName = this.widgets?.find(w => w.name === "选择组合");
                     const wPrompt = this.widgets?.find(w => w.name === "combo_prompt");
                     const wImage = this.widgets?.find(w => w.name === "combo_image");
                     
-                    if (wName) { wName.hidden = true; wName.computeSize = () => [0,0]; }
-                    if (wPrompt) { wPrompt.hidden = true; wPrompt.computeSize = () => [0,0]; }
-                    if (wImage) { wImage.hidden = true; wImage.computeSize = () => [0,0]; }
-                    this.setSize([500, 320]);
+                    [wName, wPrompt, wImage].forEach(w => {
+                        if (w) {
+                            w.type = "custom_hidden";
+                            w.hidden = true;
+                            w.computeSize = () => [0, 0];
+                            w.draw = function() {};
+                            if (w.inputEl) { w.inputEl.style.display = "none"; w.inputEl.style.visibility = "hidden"; }
+                        }
+                    });
                 }, 10);
 
-                // 构建主容器
+                // 构建主容器 (垂直排布)
                 const container = document.createElement("div");
-                // 【核心修复】：增加 pointer-events: auto 强制开启鼠标事件响应
-                container.style.cssText = "width: 100%; height: 260px; display: flex; gap: 8px; font-family: sans-serif; padding: 4px; box-sizing: border-box; pointer-events: auto;";
+                container.style.cssText = "width: 100%; height: 100%; display: flex; flex-direction: column; gap: 8px; font-family: sans-serif; padding: 4px; box-sizing: border-box; pointer-events: auto;";
                 
                 // 【终极事件护盾】：彻底隔绝 LiteGraph 对鼠标的所有劫持
                 const stopPropagation = (e) => { e.stopPropagation(); };
@@ -804,135 +904,155 @@ app.registerExtension({
                     container.addEventListener(evt, stopPropagation, { passive: false });
                 });
 
-                // 左侧栏：本地组合 (绿色系)
-                const leftCol = document.createElement("div");
-                leftCol.style.cssText = "flex: 1; min-height: 50px; max-height: 280px; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;";
-                const leftHeader = document.createElement("div");
-                leftHeader.style.cssText = "display: flex; justify-content: space-between; font-size: 11px; color: #4caf50; font-weight: bold; padding: 0 5px 4px 5px; border-bottom: 1px dashed rgba(76,175,80,0.4); margin-bottom: 4px;";
-                leftHeader.innerHTML = `<span>&lt;本地组合库&gt;</span>`;
-                const leftList = document.createElement("div");
-                leftList.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
-                leftCol.appendChild(leftHeader); leftCol.appendChild(leftList);
+                // 顶部选择栏：下拉选择一级分类
+                const topBar = document.createElement("div");
+                topBar.style.cssText = "display: flex; gap: 5px; align-items: center; width: 100%;";
+                
+                const catSelect = document.createElement("select");
+                catSelect.style.cssText = "flex: 1; padding: 6px; background: #111; color: #ff6b9d; border: 1px dashed #444; border-radius: 4px; outline: none; font-weight: bold; font-size: 12px; cursor: pointer;";
+                catSelect.onchange = () => { this.currentSelectedCat = catSelect.value; this.updateComboLists(true); };
+                
+                topBar.appendChild(catSelect);
 
-                // 右侧栏：云端组合 (粉色系)
-                const rightCol = document.createElement("div");
-                rightCol.style.cssText = "flex: 1; min-height: 50px; max-height: 280px; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;";
-                const rightHeader = document.createElement("div");
-                rightHeader.style.cssText = "display: flex; justify-content: space-between; font-size: 11px; color: #ff6b9d; font-weight: bold; padding: 0 5px 4px 5px; border-bottom: 1px dashed rgba(255,107,157,0.4); margin-bottom: 4px;";
-                rightHeader.innerHTML = `<span>&lt;订阅云端库&gt;</span>`;
-                const rightList = document.createElement("div");
-                rightList.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
-                rightCol.appendChild(rightHeader); rightCol.appendChild(rightList);
+                // 下方网格区域：动态卡片瀑布流
+                const gridArea = document.createElement("div");
+                gridArea.style.cssText = "flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); grid-auto-rows: max-content; gap: 8px; align-content: start;";
+                
+                container.appendChild(topBar);
+                container.appendChild(gridArea);
 
-                container.appendChild(leftCol);
-                container.appendChild(rightCol);
                 this.addDOMWidget("combo_ui", "HTML", container, { serialize: false, hideOnZoom: false });
 
                 this.isDestroyed = false;
                 this.lastComboStateStr = ""; 
+                this.currentSelectedCat = null;
+
                 const onRemoved = this.onRemoved;
                 this.onRemoved = function() { this.isDestroyed = true; clearInterval(this.refreshInterval); if(onRemoved) onRemoved.apply(this, arguments); };
 
-                // 核心渲染函数
-                const renderItem = (c, isCloud) => {
-                    const wName = this.widgets?.find(w => w.name === "选择组合");
-                    const isSelected = wName && wName.value === c.identifier;
-                    
-                    const itemDiv = document.createElement("div");
-                    const bgColor = isSelected ? (isCloud ? '#5a1a3a' : '#1e3e1e') : '#252525';
-                    const borderColor = isSelected ? (isCloud ? '#ff6b9d' : '#4caf50') : 'transparent';
-                    
-                    itemDiv.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: ${bgColor}; padding: 4px 6px; border-radius: 4px; transition: 0.2s; cursor: pointer; border: 1px solid ${borderColor};`;
-                    itemDiv.innerHTML = `<span style="color: #ddd; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; user-select: none;" title="${c.displayName}"><span style="color:${isCloud?'#ff6b9d':'#4caf50'};">[${c.modelName}]</span> ${c.displayName}</span>`;
-
-                    // 【核心修复】：改用原生 onclick，结合上方的拦截护盾，确保 100% 点击成功
-                    itemDiv.onclick = (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        if (wName) wName.value = c.identifier;
-                        
-                        const wPrompt = this.widgets?.find(w => w.name === "combo_prompt");
-                        const wImage = this.widgets?.find(w => w.name === "combo_image");
-                        if (wPrompt) wPrompt.value = c.promptStr;
-                        if (wImage) wImage.value = c.image || "";
-                        
-                        app.graph.setDirtyCanvas(true);
-                        this.updateComboLists(true);
-                    };
-                    return itemDiv;
-                };
-
-                // 轮询与更新逻辑
+                // 核心渲染与轮询函数
                 this.updateComboLists = (forceUpdate = false) => {
                     if (this.isDestroyed || !window.PM_Global?.state?.localDB) return;
                     const db = window.PM_Global.state.localDB;
                     const models = db.models?.main_models || {};
                     const wName = this.widgets?.find(w => w.name === "选择组合");
 
-                    let localCombos = [];
-                    let cloudCombos = [];
+                    // 构建全部分类的映射字典
+                    let catMap = new Map(); // key: mId, value: { name, combos }
+                    let totalStateObj = { models: [] }; // 用于比对状态是否发生变化
 
                     for (const [mId, mData] of Object.entries(models)) {
                         const globalCtx = `${mId}_global`;
                         const cbs = db.contexts?.[globalCtx]?.combos || [];
                         if (cbs.length === 0) continue;
 
-                        let isCloud = false;
-                        let mName = mData.name || mId;
+                        let isCloud = mId.startsWith('cloud_') || mId.startsWith('fav_cloud_');
+                        let rawName = mData.name || mId;
+                        let displayName = isCloud ? `☁️ ${rawName.replace(/\[☁️在线\]\s*/, '').replace(/订阅库-\s*/, '')}` : `💻 ${rawName}`;
 
-                        if (mId.startsWith('cloud_')) {
-                            isCloud = true;
-                            mName = mName.replace(/\[☁️在线\]\s*/, '');
-                        } else if (mId.startsWith('fav_cloud_')) {
-                            // 让订阅库的个人补充预设，也作为“云端数据”展示在右侧粉色列表中
-                            isCloud = true; 
-                            mName = mName.replace(/订阅库-\s*/, '');
-                        }
+                        let comboList = cbs.map(c => ({
+                            identifier: `[${mData.name || mId}] ${c.name}`,
+                            displayName: c.name,
+                            promptStr: c.elements.map(e => e.weight != 1 ? `(${e.tag}:${e.weight})` : e.tag).join(', '),
+                            image: c.image
+                        }));
 
-                        cbs.forEach(c => {
-                            const promptStr = c.elements.map(e => e.weight != 1 ? `(${e.tag}:${e.weight})` : e.tag).join(', ');
-                            const comboObj = {
-                                identifier: `[${mData.name || mId}] ${c.name}`,
-                                modelName: mName,
-                                displayName: c.name,
-                                promptStr: promptStr,
-                                image: c.image
-                            };
-                            if (isCloud) cloudCombos.push(comboObj);
-                            else localCombos.push(comboObj);
-                        });
+                        catMap.set(mId, { name: displayName, combos: comboList });
+                        totalStateObj.models.push(mId + cbs.length);
                     }
 
-                    // 状态对比：如果数据和选中项都没变，就不重绘DOM（保护滚动条位置）
-                    const currentState = JSON.stringify({ local: localCombos, cloud: cloudCombos, selected: wName ? wName.value : null });
-                    if (!forceUpdate && this.lastComboStateStr === currentState) return;
-                    this.lastComboStateStr = currentState;
+                    // 兜底：如果全局没有任何分类有数据
+                    if (catMap.size === 0) {
+                        catSelect.innerHTML = '<option value="">(无可用组合)</option>';
+                        gridArea.innerHTML = '<div style="color:#555; grid-column:1/-1; text-align:center; padding: 20px 0; font-size:12px;">没有任何组合数据</div>';
+                        return;
+                    }
 
-                    // 渲染本地列表
-                    leftList.innerHTML = '';
-                    if (localCombos.length === 0) leftList.innerHTML = '<div style="color:#555; text-align:center; padding:15px; font-size:11px;">无本地组合</div>';
-                    else localCombos.forEach(c => leftList.appendChild(renderItem(c, false)));
+                    // 1. 更新顶部下拉框 (只有分类结构变化或强制更新时才刷新DOM)
+                    const currentStateStr = JSON.stringify(totalStateObj);
+                    let catsChanged = (this.lastComboStateStr !== currentStateStr);
+                    if (catsChanged || forceUpdate) {
+                        this.lastComboStateStr = currentStateStr;
+                        
+                        const oldVal = catSelect.value;
+                        catSelect.innerHTML = '';
+                        let firstKey = null;
+                        
+                        for (const [mId, catInfo] of catMap.entries()) {
+                            if (!firstKey) firstKey = mId;
+                            const opt = document.createElement("option");
+                            opt.value = mId; opt.innerText = `${catInfo.name} (${catInfo.combos.length}个)`;
+                            catSelect.appendChild(opt);
+                        }
+                        
+                        // 维持用户之前的选择，或者默认选择第一个
+                        if (catMap.has(oldVal)) {
+                            catSelect.value = oldVal;
+                            this.currentSelectedCat = oldVal;
+                        } else {
+                            catSelect.value = firstKey;
+                            this.currentSelectedCat = firstKey;
+                        }
+                    }
 
-                    // 渲染云端列表
-                    rightList.innerHTML = '';
-                    if (cloudCombos.length === 0) rightList.innerHTML = '<div style="color:#555; text-align:center; padding:15px; font-size:11px;">无云端组合</div>';
-                    else cloudCombos.forEach(c => rightList.appendChild(renderItem(c, true)));
+                    // 2. 渲染下方网格
+                    const targetCat = catMap.get(this.currentSelectedCat);
+                    if (!targetCat) return;
+
+                    let selectedId = wName ? wName.value : null;
+                    
+                    gridArea.innerHTML = '';
+                    targetCat.combos.forEach(c => {
+                        const isSelected = selectedId === c.identifier;
+                        const itemDiv = document.createElement("div");
+                        
+                        // 选中状态呈现粉色高亮边框和微弱背光
+                        const borderColor = isSelected ? '#ff6b9d' : '#333';
+                        const bgColor = isSelected ? 'rgba(255,107,157,0.1)' : '#222';
+                        
+                        itemDiv.style.cssText = `background: ${bgColor}; border: 2px solid ${borderColor}; border-radius: 6px; padding: 4px; cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px; box-sizing: border-box;`;
+                        
+                        const safeImgUrl = window.PM_Global.utils.escapeHTML(c.image || '');
+                        const imgHtml = c.image 
+                            ? `<img src="${safeImgUrl}" style="width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 4px; display: block; pointer-events: none;">`
+                            : `<div style="width: 100%; aspect-ratio: 1/1; background: #111; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #555; font-size: 11px; pointer-events: none;">无预览图</div>`;
+                            
+                        itemDiv.innerHTML = `
+                            ${imgHtml}
+                            <div style="color: ${isSelected ? '#ff6b9d' : '#ccc'}; font-size: 11px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; pointer-events: none;" title="${window.PM_Global.utils.escapeHTML(c.displayName)}">${window.PM_Global.utils.escapeHTML(c.displayName)}</div>
+                        `;
+
+                        // 核心：点击卡片瞬间把数据推给底层逻辑，并让画布重绘
+                        itemDiv.onclick = (e) => {
+                            e.stopPropagation(); e.preventDefault();
+                            if (wName) wName.value = c.identifier;
+                            
+                            const wPrompt = this.widgets?.find(w => w.name === "combo_prompt");
+                            const wImage = this.widgets?.find(w => w.name === "combo_image");
+                            if (wPrompt) wPrompt.value = c.promptStr;
+                            if (wImage) wImage.value = c.image || "";
+                            
+                            app.graph.setDirtyCanvas(true);
+                            this.updateComboLists(true); // 强制重绘，触发粉框移位
+                        };
+                        
+                        gridArea.appendChild(itemDiv);
+                    });
                     
                     // 向下兼容：自动补充旧节点缺失的隐形文本数据
-                    const wPrompt = this.widgets?.find(w => w.name === "combo_prompt");
-                    const wImage = this.widgets?.find(w => w.name === "combo_image");
                     if (wName && wName.value) {
-                        const selected = [...localCombos, ...cloudCombos].find(c => c.identifier === wName.value);
-                        if (selected) {
-                            if (wPrompt && !wPrompt.value) wPrompt.value = selected.promptStr;
-                            if (wImage && !wImage.value) wImage.value = selected.image || "";
+                        const wPrompt = this.widgets?.find(w => w.name === "combo_prompt");
+                        const wImage = this.widgets?.find(w => w.name === "combo_image");
+                        const selectedCombo = targetCat.combos.find(c => c.identifier === wName.value);
+                        if (selectedCombo) {
+                            if (wPrompt && !wPrompt.value) wPrompt.value = selectedCombo.promptStr;
+                            if (wImage && !wImage.value) wImage.value = selectedCombo.image || "";
                         }
                     }
                 };
 
                 setTimeout(() => this.updateComboLists(true), 500);
-                this.refreshInterval = setInterval(() => this.updateComboLists(), 1500); // 加快轮询频率
-                this.setSize([500, 320]);
+                this.refreshInterval = setInterval(() => this.updateComboLists(), 1500);
             };
         }
     }
@@ -1012,7 +1132,7 @@ app.registerExtension({
 
                 // 2. 构建三栏 Flex 容器
                 const container = document.createElement("div");
-                container.style.cssText = "display: flex; width: 100%; height: 260px; gap: 8px; padding: 4px; box-sizing: border-box; background: #151515; border-radius: 6px; pointer-events: auto; font-family: sans-serif;";
+                container.style.cssText = "display: flex; width: 100%; height: 100%; gap: 8px; padding: 4px; box-sizing: border-box; background: #151515; border-radius: 6px; pointer-events: auto; font-family: sans-serif;";
 
                 const stopProp = (e) => e.stopPropagation();
                 ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'dblclick', 'wheel', 'keydown', 'keyup'].forEach(evt => {
