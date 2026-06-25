@@ -1,4 +1,4 @@
-# ComfyUI-Prompt-Manager
+# ComfyUI-Prompt-Explorer
 **一个用于浏览与管理画师串、各种 Prompt 预设的极简小插件**
 
 > 📢 **参与社区共建 / 提交画师库：**  
